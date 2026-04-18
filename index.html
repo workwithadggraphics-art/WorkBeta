@@ -741,4 +741,155 @@
 <div class="cta-strip">
   <h2>Start converting your notes today.</h2>
   <p>Free to use. No sign-up required. Just upload and go.</p>
-  <button class="btn-primary" style="font-size:16px;padding:16px 40px;" onclick="window.scrollTo({top:0,behavior:
+  <button class="btn-primary" style="font-size:16px;padding:16px 40px;" onclick="window.scrollTo({top:0,behavior:'smooth'})">Get Started — It's Free</button>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="logo">
+    <div class="logo-mark">W</div>
+    <span class="logo-text">Work<span>Beta</span></span>
+  </div>
+  <p>© 2025 WorkBeta. Made for educators.</p>
+  <div class="footer-links">
+    <a href="#">Privacy</a>
+    <a href="#">Terms</a>
+    <a href="#">Contact</a>
+  </div>
+</footer>
+
+<script>
+  // ── File handling ──
+  const dropZone   = document.getElementById('dropZone');
+  const fileInput  = document.getElementById('fileInput');
+  const fileList   = document.getElementById('fileList');
+  const convertBtn = document.getElementById('convertBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+  const progressLabel = document.getElementById('progressLabel');
+  const progressPct   = document.getElementById('progressPct');
+  const successMsg = document.getElementById('successMsg');
+
+  let files = [];
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave',  () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    addFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', () => addFiles([...fileInput.files]));
+
+  function addFiles(newFiles) {
+    newFiles.forEach(f => {
+      if (!files.find(x => x.name === f.name)) files.push(f);
+    });
+    renderFiles();
+  }
+
+  function renderFiles() {
+    fileList.innerHTML = '';
+    files.forEach((f, i) => {
+      const ext = f.name.split('.').pop().toLowerCase();
+      const icons = { txt:'📄', docx:'📝', doc:'📝', pdf:'📑', md:'🗒️', jpg:'🖼️', jpeg:'🖼️', png:'🖼️' };
+      const icon = icons[ext] || '📄';
+      const el = document.createElement('div');
+      el.className = 'file-item';
+      el.innerHTML = `
+        <span class="file-icon">${icon}</span>
+        <span class="file-name">${f.name}</span>
+        <button class="remove-btn" onclick="removeFile(${i})">✕</button>
+      `;
+      fileList.appendChild(el);
+    });
+    convertBtn.disabled = files.length === 0;
+    successMsg.classList.remove('active');
+    progressWrap.classList.remove('active');
+  }
+
+  function removeFile(i) {
+    files.splice(i, 1);
+    renderFiles();
+  }
+
+  // ── Real conversion via Firebase Cloud Function ──
+  // Replace this URL with your deployed function URL after deployment
+  const FUNCTION_URL = 'https://workbeta-production.up.railway.app/convertNotes';
+
+  let docBlob = null;
+
+  async function startConvert() {
+    convertBtn.disabled = true;
+    docBlob = null;
+    successMsg.classList.remove('active');
+    progressWrap.classList.add('active');
+    progressFill.style.width = '0%';
+    progressPct.textContent = '0%';
+    progressLabel.textContent = 'Uploading files…';
+
+    try {
+      // Build FormData with all files
+      const formData = new FormData();
+      files.forEach(f => formData.append('files', f));
+
+      // Fake progress while waiting for server
+      let fakeProgress = 0;
+      const ticker = setInterval(() => {
+        if (fakeProgress < 80) {
+          fakeProgress += Math.random() * 8;
+          progressFill.style.width = Math.min(fakeProgress, 80) + '%';
+          progressPct.textContent = Math.floor(Math.min(fakeProgress, 80)) + '%';
+          const labels = [10, 30, 55, 70];
+          if (fakeProgress > 70) progressLabel.textContent = 'Building document…';
+          else if (fakeProgress > 50) progressLabel.textContent = 'Formatting content…';
+          else if (fakeProgress > 25) progressLabel.textContent = 'Extracting text…';
+          else progressLabel.textContent = 'Uploading files…';
+        }
+      }, 400);
+
+      const response = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        body: formData
+      });
+
+      clearInterval(ticker);
+
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(err || 'Server error');
+      }
+
+      // Server returns the .docx binary
+      docBlob = await response.blob();
+
+      progressFill.style.width = '100%';
+      progressPct.textContent = '100%';
+      progressLabel.textContent = 'Done!';
+
+      await delay(400);
+      progressWrap.classList.remove('active');
+      successMsg.classList.add('active');
+
+    } catch (err) {
+      progressWrap.classList.remove('active');
+      alert('Conversion failed: ' + err.message + '\n\nMake sure your FUNCTION_URL is set correctly.');
+    }
+
+    convertBtn.disabled = false;
+  }
+
+  function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  function downloadDoc() {
+    if (!docBlob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(docBlob);
+    a.download = 'WorkBeta_Document.docx';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+</script>
+</body>
+</html>
