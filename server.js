@@ -3,13 +3,15 @@ const cors = require("cors");
 const Busboy = require("busboy");
 const mammoth = require("mammoth");
 const pdfParse = require("pdf-parse");
-const Tesseract = require("tesseract.js");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak, AlignmentType
 } = require("docx");
 
 const app = express();
 app.use(cors());
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
@@ -29,19 +31,34 @@ function parseMultipart(req) {
 
 async function extractText(buffer, filename) {
   const ext = filename.split(".").pop().toLowerCase();
+
   if (ext === "txt" || ext === "md") return buffer.toString("utf-8");
+
   if (ext === "docx" || ext === "doc") {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
   }
+
   if (ext === "pdf") {
     const result = await pdfParse(buffer);
     return result.text;
   }
-  if (["jpg","jpeg","png"].includes(ext)) {
-    const { data } = await Tesseract.recognize(buffer, "eng", { logger: () => {} });
-    return data.text;
+
+  if (["jpg", "jpeg", "png"].includes(ext)) {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const imageData = {
+      inlineData: {
+        data: buffer.toString("base64"),
+        mimeType: ext === "png" ? "image/png" : "image/jpeg"
+      }
+    };
+    const result = await model.generateContent([
+      imageData,
+      "Please read and transcribe all the handwritten or printed text in this image exactly as written. Return only the transcribed text, nothing else."
+    ]);
+    return result.response.text();
   }
+
   return `[Unsupported file: ${filename}]`;
 }
 
