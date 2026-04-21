@@ -61,7 +61,7 @@ async function extractText(buffer, filename) {
     };
     const result = await model.generateContent([
       imageData,
-      "Please read and transcribe all the handwritten or printed text in this document. Ensure all words are properly spaced and separated. Fix any spacing issues between words. Preserve paragraph breaks, headings, and structure. Return only the transcribed text, nothing else."
+      "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Fix any OCR errors or joined words you notice. Transcribe all the text now, following these rules strictly."
     ]);
     return result.response.text();
   }
@@ -76,7 +76,7 @@ async function extractText(buffer, filename) {
     };
     const result = await model.generateContent([
       imageData,
-      "Please read and transcribe all the handwritten or printed text in this image. Ensure all words are properly spaced and separated. Fix any spacing issues between words. Preserve paragraph breaks and line structure. Return only the transcribed text, nothing else."
+      "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Fix any OCR errors or joined words you notice. Transcribe all the text now, following these rules strictly."
     ]);
     return result.response.text();
   }
