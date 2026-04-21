@@ -54,7 +54,7 @@ async function extractText(buffer, filename) {
     };
     const result = await model.generateContent([
       imageData,
-      "Please read and transcribe all the handwritten or printed text in this image exactly as written. Return only the transcribed text, nothing else."
+      "Please read and transcribe all the handwritten or printed text in this image. Ensure all words are properly spaced and separated. Fix any spacing issues between words. Preserve paragraph breaks and line structure. Return only the transcribed text, nothing else."
     ]);
     return result.response.text();
   }
