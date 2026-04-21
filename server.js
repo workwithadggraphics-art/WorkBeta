@@ -40,18 +40,6 @@ async function extractText(buffer, filename) {
   }
 
   if (ext === "pdf") {
-    // First try normal text extraction
-    try {
-      const result = await pdfParse(buffer);
-      const text = result.text.trim();
-      // If extracted text is too short it's likely a scanned PDF
-      if (text.length > 100) {
-        return text;
-      }
-    } catch (e) {
-      // PDF parse failed — fall through to Gemini
-    }
-    // Scanned PDF — convert to base64 and send to Gemini as image
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     const imageData = {
       inlineData: {
@@ -61,7 +49,7 @@ async function extractText(buffer, filename) {
     };
     const result = await model.generateContent([
       imageData,
-      "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Fix any OCR errors or joined words you notice. Transcribe all the text now, following these rules strictly."
+      "You are a document transcription expert. Carefully read all text in this document. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
     ]);
     return result.response.text();
   }
