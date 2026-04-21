@@ -40,8 +40,30 @@ async function extractText(buffer, filename) {
   }
 
   if (ext === "pdf") {
-    const result = await pdfParse(buffer);
-    return result.text;
+    // First try normal text extraction
+    try {
+      const result = await pdfParse(buffer);
+      const text = result.text.trim();
+      // If extracted text is too short it's likely a scanned PDF
+      if (text.length > 100) {
+        return text;
+      }
+    } catch (e) {
+      // PDF parse failed — fall through to Gemini
+    }
+    // Scanned PDF — convert to base64 and send to Gemini as image
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const imageData = {
+      inlineData: {
+        data: buffer.toString("base64"),
+        mimeType: "application/pdf"
+      }
+    };
+    const result = await model.generateContent([
+      imageData,
+      "Please read and transcribe all the handwritten or printed text in this document. Ensure all words are properly spaced and separated. Fix any spacing issues between words. Preserve paragraph breaks, headings, and structure. Return only the transcribed text, nothing else."
+    ]);
+    return result.response.text();
   }
 
   if (["jpg", "jpeg", "png"].includes(ext)) {
@@ -61,7 +83,6 @@ async function extractText(buffer, filename) {
 
   return `[Unsupported file: ${filename}]`;
 }
-
 function buildDocx(sections) {
   const children = [];
 
