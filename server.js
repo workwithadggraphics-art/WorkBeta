@@ -64,52 +64,130 @@ async function extractText(buffer, filename) {
 
 function buildDocx(sections) {
   const children = [];
+
+  // Cover title
   children.push(new Paragraph({
     text: "WorkBeta Compiled Document",
     heading: HeadingLevel.TITLE,
     alignment: AlignmentType.CENTER,
-    spacing: { after: 400 }
+    spacing: { before: 0, after: 600 }
   }));
+
   children.push(new Paragraph({
     children: [new TextRun({
       text: `Generated on ${new Date().toDateString()} · ${sections.length} file(s)`,
-      color: "888888", size: 20
+      color: "888888",
+      size: 20,
+      italics: true
     })],
     alignment: AlignmentType.CENTER,
     spacing: { after: 800 }
   }));
 
   sections.forEach((section, idx) => {
+    // Section heading
     children.push(new Paragraph({
       text: `Section ${idx + 1}: ${section.filename}`,
       heading: HeadingLevel.HEADING_1,
-      spacing: { before: 400, after: 200 }
+      spacing: { before: 600, after: 300 },
+      border: {
+        bottom: { color: "1B5EE8", size: 6, style: "single" }
+      }
     }));
-    const lines = section.text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-    if (lines.length === 0) {
+
+    const lines = section.text
+      .split("\n")
+      .map(l => l.trim());
+
+    if (lines.filter(l => l.length > 0).length === 0) {
       children.push(new Paragraph({
-        children: [new TextRun({ text: "[No readable text found]", italics: true, color: "999999" })]
+        children: [new TextRun({
+          text: "[No readable text found]",
+          italics: true,
+          color: "999999",
+          size: 22
+        })],
+        spacing: { after: 200 }
       }));
     } else {
       lines.forEach(line => {
-        children.push(new Paragraph({
-          children: [new TextRun({ text: line, size: 24, font: "Calibri" })],
-          spacing: { after: 120 }
-        }));
+        if (line.length === 0) {
+          // Empty line becomes a spacer paragraph
+          children.push(new Paragraph({
+            text: "",
+            spacing: { after: 160 }
+          }));
+        } else if (
+          line.endsWith(':') ||
+          /^[A-Z][A-Z\s]{3,}$/.test(line) ||
+          (line.length < 60 && line === line.toUpperCase() && line.length > 3)
+        ) {
+          // Looks like a heading
+          children.push(new Paragraph({
+            children: [new TextRun({
+              text: line,
+              bold: true,
+              size: 26,
+              font: "Calibri",
+              color: "1140A6"
+            })],
+            spacing: { before: 320, after: 160 }
+          }));
+        } else if (/^[-•*]\s/.test(line) || /^\d+[.)]\s/.test(line)) {
+          // Bullet or numbered list item
+          children.push(new Paragraph({
+            children: [new TextRun({
+              text: line,
+              size: 24,
+              font: "Calibri"
+            })],
+            indent: { left: 360 },
+            spacing: { after: 120 }
+          }));
+        } else {
+          // Normal paragraph
+          children.push(new Paragraph({
+            children: [new TextRun({
+              text: line,
+              size: 24,
+              font: "Calibri"
+            })],
+            spacing: { after: 200 },
+            indent: { firstLine: 360 }
+          }));
+        }
       });
     }
+
+    // Page break between sections except last
     if (idx < sections.length - 1) {
-      children.push(new Paragraph({ children: [new PageBreak()] }));
+      children.push(new Paragraph({
+        children: [new PageBreak()]
+      }));
     }
   });
 
   const doc = new Document({
-    styles: { default: { document: { run: { font: "Calibri", size: 24 } } } },
-    sections: [{ children }]
+    styles: {
+      default: {
+        document: {
+          run: { font: "Calibri", size: 24 },
+          paragraph: { spacing: { line: 360 } }
+        }
+      }
+    },
+    sections: [{ 
+      properties: {
+        page: {
+          margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
+        }
+      },
+      children 
+    }]
   });
+
   return Packer.toBuffer(doc);
 }
-
 app.post("/convertNotes", async (req, res) => {
   try {
     const uploads = await parseMultipart(req);
