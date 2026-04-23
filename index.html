@@ -790,11 +790,14 @@
 
   function addFiles(newFiles) {
     newFiles.forEach(f => {
+      if (files.length >= 6) {
+        alert('Maximum 6 files allowed per conversion.');
+        return;
+      }
       if (!files.find(x => x.name === f.name)) files.push(f);
     });
     renderFiles();
   }
-
   function renderFiles() {
     fileList.innerHTML = '';
     files.forEach((f, i) => {
