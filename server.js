@@ -10,6 +10,24 @@ const {
 
 const app = express();
 app.use(cors());
+async function callGeminiWithRetry(model, content, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await model.generateContent(content);
+      return result;
+    } catch (err) {
+      const is503 = err.message && err.message.includes('503');
+      const is429 = err.message && err.message.includes('429');
+      if ((is503 || is429) && attempt < maxRetries) {
+        const waitTime = attempt * 10000; // 10s, 20s, 30s
+        console.log(`Gemini error on attempt ${attempt}, retrying in ${waitTime/1000}s...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -47,7 +65,7 @@ async function extractText(buffer, filename) {
         mimeType: "application/pdf"
       }
     };
-    const result = await model.generateContent([
+    const result = await callGeminiWithRetry(model, [
       imageData,
       "You are a document transcription expert. Carefully read all text in this document. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
     ]);
@@ -62,7 +80,7 @@ async function extractText(buffer, filename) {
         mimeType: ext === "png" ? "image/png" : "image/jpeg"
       }
     };
-    const result = await model.generateContent([
+    const result = await callGeminiWithRetry(model, [
       imageData,
       "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Fix any OCR errors or joined words you notice. Transcribe all the text now, following these rules strictly."
     ]);
