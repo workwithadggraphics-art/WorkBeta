@@ -883,11 +883,14 @@ compressed.forEach(f => formData.append('files', f));
         }
       }, 400);
 
-      const response = await fetch(FUNCTION_URL, {
-        method: 'POST',
-        body: formData
-      });
-
+      const controller = new AbortController();
+const timeoutId = setTimeout(() => controller.abort(), 280000);
+const response = await fetch(FUNCTION_URL, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal
+    });
+clearTimeout(timeoutId);
       clearInterval(ticker);
 
       if (!response.ok) {
