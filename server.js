@@ -218,4 +218,6 @@ app.post("/convertNotes", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`WorkBeta running on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`WorkBeta running on port ${PORT}`));
+server.timeout = 300000; // 5 minutes
+server.keepAliveTimeout = 300000;
