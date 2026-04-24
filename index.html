@@ -798,6 +798,31 @@
     });
     renderFiles();
   }
+
+  async function compressImage(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['jpg','jpeg','png'].includes(ext)) return file;
+    return new Promise(resolve => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const MAX = 1200;
+        let w = img.width, h = img.height;
+        if (w > MAX || h > MAX) {
+          if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+          else { w = Math.round(w * MAX / h); h = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          URL.revokeObjectURL(url);
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+        }, 'image/jpeg', 0.75);
+      };
+      img.src = url;
+    });
+  }
   function renderFiles() {
     fileList.innerHTML = '';
     files.forEach((f, i) => {
@@ -841,8 +866,8 @@
     try {
       // Build FormData with all files
       const formData = new FormData();
-      files.forEach(f => formData.append('files', f));
-
+      const compressed = await Promise.all(files.map(f => compressImage(f)));
+compressed.forEach(f => formData.append('files', f));
       // Fake progress while waiting for server
       let fakeProgress = 0;
       const ticker = setInterval(() => {
