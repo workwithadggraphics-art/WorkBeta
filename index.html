@@ -860,7 +860,7 @@
     progressWrap.classList.add('active');
     progressFill.style.width = '0%';
     progressPct.textContent = '0%';
-    progressLabel.textContent = 'Uploading files…';
+    progressLabel.textContent = `Processing ${files.length} file${files.length > 1 ? 's' : ''}… this may take up to 2 minutes`;
 
     try {
       // Build FormData with all files
@@ -874,11 +874,11 @@ compressed.forEach(f => formData.append('files', f));
           fakeProgress += Math.random() * 8;
           progressFill.style.width = Math.min(fakeProgress, 80) + '%';
           progressPct.textContent = Math.floor(Math.min(fakeProgress, 80)) + '%';
-          const labels = [10, 30, 55, 70];
-          if (fakeProgress > 70) progressLabel.textContent = 'Building document…';
-          else if (fakeProgress > 50) progressLabel.textContent = 'Formatting content…';
-          else if (fakeProgress > 25) progressLabel.textContent = 'Extracting text…';
-          else progressLabel.textContent = 'Uploading files…';
+          const fileCount = files.length;
+if (fakeProgress > 70) progressLabel.textContent = 'Building your Word document…';
+else if (fakeProgress > 50) progressLabel.textContent = `Reading ${fileCount} file${fileCount > 1 ? 's' : ''} with AI… please wait`;
+else if (fakeProgress > 25) progressLabel.textContent = 'Extracting and formatting text…';
+else progressLabel.textContent = 'Uploading files to server…';
         }
       }, 400);
 
