@@ -219,12 +219,13 @@ app.post("/convertNotes", async (req, res) => {
   try {
     const uploads = await parseMultipart(req);
     if (!uploads.length) return res.status(400).send("No files received.");
-    const sections = await Promise.all(
-      uploads.map(async ({ filename, buffer }) => ({
-        filename,
-        text: await extractText(buffer, filename)
-      }))
-    );
+    const sections = [];
+for (const { filename, buffer } of uploads) {
+  const text = await extractText(buffer, filename);
+  sections.push({ filename, text });
+  // Small delay between files to avoid rate limits
+  await new Promise(r => setTimeout(r, 3000));
+}
     const docBuffer = await buildDocx(sections);
     res.set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.set("Content-Disposition", 'attachment; filename="WorkBeta_Document.docx"');
