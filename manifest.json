@@ -2,7 +2,7 @@
   "name": "WorkBeta - Notes to Documents",
   "short_name": "WorkBeta",
   "description": "Convert handwritten notes, images, and PDFs into clean Word documents instantly.",
-  "start_url": "/workbeta/",
+  "start_url": "/WorkBeta/",
   "display": "standalone",
   "background_color": "#0B1F4B",
   "theme_color": "#1B5EE8",
