@@ -2,34 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const Busboy = require("busboy");
 const mammoth = require("mammoth");
-const pdfParse = require("pdf-parse");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const Groq = require("groq-sdk");
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak, AlignmentType
 } = require("docx");
 
 const app = express();
 app.use(cors());
-async function callGeminiWithRetry(model, content, maxRetries = 3) {
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const result = await model.generateContent(content);
-      return result;
-    } catch (err) {
-      const is503 = err.message && err.message.includes('503');
-      const is429 = err.message && err.message.includes('429');
-      if ((is503 || is429) && attempt < maxRetries) {
-        const waitTime = attempt * 10000; // 10s, 20s, 30s
-        console.log(`Gemini error on attempt ${attempt}, retrying in ${waitTime/1000}s...`);
-        await new Promise(r => setTimeout(r, waitTime));
-      } else {
-        throw err;
-      }
-    }
-  }
-}
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
@@ -57,42 +38,40 @@ async function extractText(buffer, filename) {
     return result.value;
   }
 
-  if (ext === "pdf") {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const imageData = {
-      inlineData: {
-        data: buffer.toString("base64"),
-        mimeType: "application/pdf"
-      }
-    };
-    const result = await callGeminiWithRetry(model, [
-      imageData,
-      "You are a document transcription expert. Carefully read all text in this document. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
-    ]);
-    return result.response.text();
-  }
-
-  if (["jpg", "jpeg", "png"].includes(ext)) {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const imageData = {
-      inlineData: {
-        data: buffer.toString("base64"),
-        mimeType: ext === "png" ? "image/png" : "image/jpeg"
-      }
-    };
-    const result = await callGeminiWithRetry(model, [
-      imageData,
-      "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Fix any OCR errors or joined words you notice. Transcribe all the text now, following these rules strictly."
-    ]);
-    return result.response.text();
+  if (ext === "pdf" || ["jpg", "jpeg", "png"].includes(ext)) {
+    const mimeType = ext === "pdf" ? "application/pdf" :
+                     ext === "png" ? "image/png" : "image/jpeg";
+    const base64 = buffer.toString("base64");
+    const response = await groq.chat.completions.create({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`
+              }
+            },
+            {
+              type: "text",
+              text: "You are a document transcription expert. Carefully read all text in this document or image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
+            }
+          ]
+        }
+      ],
+      max_tokens: 4096
+    });
+    return response.choices[0].message.content;
   }
 
   return `[Unsupported file: ${filename}]`;
 }
+
 function buildDocx(sections) {
   const children = [];
 
-  // Cover title
   children.push(new Paragraph({
     text: "WorkBeta Compiled Document",
     heading: HeadingLevel.TITLE,
@@ -112,7 +91,6 @@ function buildDocx(sections) {
   }));
 
   sections.forEach((section, idx) => {
-    // Section heading
     children.push(new Paragraph({
       text: `Section ${idx + 1}: ${section.filename}`,
       heading: HeadingLevel.HEADING_1,
@@ -122,9 +100,7 @@ function buildDocx(sections) {
       }
     }));
 
-    const lines = section.text
-      .split("\n")
-      .map(l => l.trim());
+    const lines = section.text.split("\n").map(l => l.trim());
 
     if (lines.filter(l => l.length > 0).length === 0) {
       children.push(new Paragraph({
@@ -139,46 +115,23 @@ function buildDocx(sections) {
     } else {
       lines.forEach(line => {
         if (line.length === 0) {
-          // Empty line becomes a spacer paragraph
-          children.push(new Paragraph({
-            text: "",
-            spacing: { after: 160 }
-          }));
-        } else if (
-          line.endsWith(':') ||
-          /^[A-Z][A-Z\s]{3,}$/.test(line) ||
-          (line.length < 60 && line === line.toUpperCase() && line.length > 3)
-        ) {
-          // Looks like a heading
+          children.push(new Paragraph({ text: "", spacing: { after: 160 } }));
+        } else if (line.endsWith(':') || /^[A-Z][A-Z\s]{3,}$/.test(line)) {
           children.push(new Paragraph({
             children: [new TextRun({
-              text: line,
-              bold: true,
-              size: 26,
-              font: "Calibri",
-              color: "1140A6"
+              text: line, bold: true, size: 26, font: "Calibri", color: "1140A6"
             })],
             spacing: { before: 320, after: 160 }
           }));
         } else if (/^[-•*]\s/.test(line) || /^\d+[.)]\s/.test(line)) {
-          // Bullet or numbered list item
           children.push(new Paragraph({
-            children: [new TextRun({
-              text: line,
-              size: 24,
-              font: "Calibri"
-            })],
+            children: [new TextRun({ text: line, size: 24, font: "Calibri" })],
             indent: { left: 360 },
             spacing: { after: 120 }
           }));
         } else {
-          // Normal paragraph
           children.push(new Paragraph({
-            children: [new TextRun({
-              text: line,
-              size: 24,
-              font: "Calibri"
-            })],
+            children: [new TextRun({ text: line, size: 24, font: "Calibri" })],
             spacing: { after: 200 },
             indent: { firstLine: 360 }
           }));
@@ -186,11 +139,8 @@ function buildDocx(sections) {
       });
     }
 
-    // Page break between sections except last
     if (idx < sections.length - 1) {
-      children.push(new Paragraph({
-        children: [new PageBreak()]
-      }));
+      children.push(new Paragraph({ children: [new PageBreak()] }));
     }
   });
 
@@ -203,29 +153,29 @@ function buildDocx(sections) {
         }
       }
     },
-    sections: [{ 
+    sections: [{
       properties: {
-        page: {
-          margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 }
-        }
+        page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } }
       },
-      children 
+      children
     }]
   });
 
   return Packer.toBuffer(doc);
 }
+
 app.post("/convertNotes", async (req, res) => {
   try {
     const uploads = await parseMultipart(req);
     if (!uploads.length) return res.status(400).send("No files received.");
+
     const sections = [];
-for (const { filename, buffer } of uploads) {
-  const text = await extractText(buffer, filename);
-  sections.push({ filename, text });
-  // Small delay between files to avoid rate limits
-  await new Promise(r => setTimeout(r, 3000));
-}
+    for (const { filename, buffer } of uploads) {
+      const text = await extractText(buffer, filename);
+      sections.push({ filename, text });
+      await new Promise(r => setTimeout(r, 2000));
+    }
+
     const docBuffer = await buildDocx(sections);
     res.set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     res.set("Content-Disposition", 'attachment; filename="WorkBeta_Document.docx"');
@@ -238,5 +188,5 @@ for (const { filename, buffer } of uploads) {
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`WorkBeta running on port ${PORT}`));
-server.timeout = 300000; // 5 minutes
+server.timeout = 300000;
 server.keepAliveTimeout = 300000;
