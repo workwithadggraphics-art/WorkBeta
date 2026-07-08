@@ -2,9 +2,16 @@ const express = require("express");
 const cors = require("cors");
 const Busboy = require("busboy");
 const mammoth = require("mammoth");
+const pdfParse = require("pdf-parse");
 const Groq = require("groq-sdk");
 const {
-  Document, Packer, Paragraph, TextRun, HeadingLevel, PageBreak, AlignmentType
+  Document,
+  Packer,
+  Paragraph,
+  TextRun,
+  HeadingLevel,
+  PageBreak,
+  AlignmentType,
 } = require("docx");
 
 const app = express();
@@ -19,8 +26,10 @@ function parseMultipart(req) {
     busboy.on("file", (fieldname, file, info) => {
       const { filename } = info;
       const chunks = [];
-      file.on("data", chunk => chunks.push(chunk));
-      file.on("end", () => uploads.push({ filename, buffer: Buffer.concat(chunks) }));
+      file.on("data", (chunk) => chunks.push(chunk));
+      file.on("end", () =>
+        uploads.push({ filename, buffer: Buffer.concat(chunks) })
+      );
     });
     busboy.on("finish", () => resolve(uploads));
     busboy.on("error", reject);
@@ -31,11 +40,24 @@ function parseMultipart(req) {
 async function extractText(buffer, filename) {
   const ext = filename.split(".").pop().toLowerCase();
 
-  if (ext === "txt" || ext === "md") return buffer.toString("utf-8");
+  if (ext === "txt" || ext === "md") {
+    return buffer.toString("utf-8");
+  }
 
   if (ext === "docx" || ext === "doc") {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
+  }
+
+  if (ext === "pdf") {
+    try {
+      const result = await pdfParse(buffer);
+      const text = result.text.trim();
+      if (text.length > 50) return text;
+    } catch (e) {
+      console.log("pdf-parse failed, returning empty");
+    }
+    return "[Could not extract PDF text]";
   }
 
   if (["jpg", "jpeg", "png"].includes(ext)) {
@@ -51,38 +73,16 @@ async function extractText(buffer, filename) {
               type: "image_url",
               image_url: {
                 url: `data:${mimeType};base64,${base64}`,
-                detail: "high"
-              }
+              },
             },
             {
               type: "text",
-              text: "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
-            }
-          ]
-        }
+              text: "Transcribe all text in this image. Ensure every word is properly spaced. Preserve paragraph breaks and structure. Return only the transcribed text.",
+            },
+          ],
+        },
       ],
-      max_tokens: 4096
-    });
-    return response.choices[0].message.content;
-  }
-
-  if (ext === "pdf") {
-    const pdfParse = require("pdf-parse");
-    try {
-      const result = await pdfParse(buffer);
-      const text = result.text.trim();
-      if (text.length > 100) return text;
-    } catch (e) {}
-    return "[Could not extract text from PDF]";
-  }
-            {
-              type: "text",
-              text: "You are a document transcription expert. Carefully read all text in this document or image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
-            }
-          ]
-        }
-      ],
-      max_tokens: 4096
+      max_tokens: 4096,
     });
     return response.choices[0].message.content;
   }
@@ -93,70 +93,64 @@ async function extractText(buffer, filename) {
 function buildDocx(sections) {
   const children = [];
 
-  children.push(new Paragraph({
-    text: "WorkBeta Compiled Document",
-    heading: HeadingLevel.TITLE,
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 0, after: 600 }
-  }));
+  children.push(
+    new Paragraph({
+      text: "WorkBeta Compiled Document",
+      heading: HeadingLevel.TITLE,
+      alignment: AlignmentType.CENTER,
+    })
+  );
 
-  children.push(new Paragraph({
-    children: [new TextRun({
-      text: `Generated on ${new Date().toDateString()} · ${sections.length} file(s)`,
-      color: "888888",
-      size: 20,
-      italics: true
-    })],
-    alignment: AlignmentType.CENTER,
-    spacing: { after: 800 }
-  }));
+  children.push(
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: `Generated on ${new Date().toDateString()} - ${sections.length} file(s)`,
+          color: "888888",
+          size: 20,
+        }),
+      ],
+      alignment: AlignmentType.CENTER,
+    })
+  );
 
   sections.forEach((section, idx) => {
-    children.push(new Paragraph({
-      text: `Section ${idx + 1}: ${section.filename}`,
-      heading: HeadingLevel.HEADING_1,
-      spacing: { before: 600, after: 300 },
-      border: {
-        bottom: { color: "1B5EE8", size: 6, style: "single" }
-      }
-    }));
+    children.push(
+      new Paragraph({
+        text: `Section ${idx + 1}: ${section.filename}`,
+        heading: HeadingLevel.HEADING_1,
+      })
+    );
 
-    const lines = section.text.split("\n").map(l => l.trim());
+    const lines = section.text
+      .split("\n")
+      .map((l) => l.trim());
 
-    if (lines.filter(l => l.length > 0).length === 0) {
-      children.push(new Paragraph({
-        children: [new TextRun({
-          text: "[No readable text found]",
-          italics: true,
-          color: "999999",
-          size: 22
-        })],
-        spacing: { after: 200 }
-      }));
+    if (lines.filter((l) => l.length > 0).length === 0) {
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "[No readable text found]",
+              italics: true,
+              color: "999999",
+            }),
+          ],
+        })
+      );
     } else {
-      lines.forEach(line => {
-        if (line.length === 0) {
-          children.push(new Paragraph({ text: "", spacing: { after: 160 } }));
-        } else if (line.endsWith(':') || /^[A-Z][A-Z\s]{3,}$/.test(line)) {
-          children.push(new Paragraph({
-            children: [new TextRun({
-              text: line, bold: true, size: 26, font: "Calibri", color: "1140A6"
-            })],
-            spacing: { before: 320, after: 160 }
-          }));
-        } else if (/^[-•*]\s/.test(line) || /^\d+[.)]\s/.test(line)) {
-          children.push(new Paragraph({
-            children: [new TextRun({ text: line, size: 24, font: "Calibri" })],
-            indent: { left: 360 },
-            spacing: { after: 120 }
-          }));
-        } else {
-          children.push(new Paragraph({
-            children: [new TextRun({ text: line, size: 24, font: "Calibri" })],
-            spacing: { after: 200 },
-            indent: { firstLine: 360 }
-          }));
-        }
+      lines.forEach((line) => {
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: line,
+                size: 24,
+                font: "Calibri",
+              }),
+            ],
+          })
+        );
       });
     }
 
@@ -166,20 +160,7 @@ function buildDocx(sections) {
   });
 
   const doc = new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: "Calibri", size: 24 },
-          paragraph: { spacing: { line: 360 } }
-        }
-      }
-    },
-    sections: [{
-      properties: {
-        page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } }
-      },
-      children
-    }]
+    sections: [{ children }],
   });
 
   return Packer.toBuffer(doc);
@@ -194,20 +175,24 @@ app.post("/convertNotes", async (req, res) => {
     for (const { filename, buffer } of uploads) {
       const text = await extractText(buffer, filename);
       sections.push({ filename, text });
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
 
     const docBuffer = await buildDocx(sections);
-    res.set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.set("Content-Disposition", 'attachment; filename="WorkBeta_Document.docx"');
+    res.set(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    res.set(
+      "Content-Disposition",
+      'attachment; filename="WorkBeta_Document.docx"'
+    );
     res.status(200).send(docBuffer);
   } catch (err) {
-    console.error(err);
+    console.error("Error:", err);
     res.status(500).send("Error: " + err.message);
   }
 });
 
 const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log(`WorkBeta running on port ${PORT}`));
-server.timeout = 300000;
-server.keepAliveTimeout = 300000;
+app.listen(PORT, () => console.log(`WorkBeta running on port ${PORT}`));
