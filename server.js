@@ -38,9 +38,8 @@ async function extractText(buffer, filename) {
     return result.value;
   }
 
-  if (ext === "pdf" || ["jpg", "jpeg", "png"].includes(ext)) {
-    const mimeType = ext === "pdf" ? "application/pdf" :
-                     ext === "png" ? "image/png" : "image/jpeg";
+  if (["jpg", "jpeg", "png"].includes(ext)) {
+    const mimeType = ext === "png" ? "image/png" : "image/jpeg";
     const base64 = buffer.toString("base64");
     const response = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -51,9 +50,31 @@ async function extractText(buffer, filename) {
             {
               type: "image_url",
               image_url: {
-                url: `data:${mimeType};base64,${base64}`
+                url: `data:${mimeType};base64,${base64}`,
+                detail: "high"
               }
             },
+            {
+              type: "text",
+              text: "You are a document transcription expert. Carefully read all text in this image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
+            }
+          ]
+        }
+      ],
+      max_tokens: 4096
+    });
+    return response.choices[0].message.content;
+  }
+
+  if (ext === "pdf") {
+    const pdfParse = require("pdf-parse");
+    try {
+      const result = await pdfParse(buffer);
+      const text = result.text.trim();
+      if (text.length > 100) return text;
+    } catch (e) {}
+    return "[Could not extract text from PDF]";
+  }
             {
               type: "text",
               text: "You are a document transcription expert. Carefully read all text in this document or image. IMPORTANT RULES: 1) Every word must be separated by a space. 2) Never join two words together without a space between them. 3) Sentences must end with proper punctuation. 4) Each new topic or paragraph should be on a new line. 5) Preserve all headings, bullet points and numbered lists exactly as they appear. Transcribe all the text now, following these rules strictly."
