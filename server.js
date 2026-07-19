@@ -141,16 +141,17 @@ function buildDocx(sections) {
     } else {
       lines.forEach((line) => {
         children.push(
-          new Paragraph({
-            children: [
-              new TextRun({
-                text: line,
-                size: 24,
-                font: "Calibri",
-              }),
-            ],
-          })
-        );
+  new Paragraph({
+    children: [
+      new TextRun({
+        text: line,
+        size: 24,
+        font: "Calibri",
+      }),
+    ],
+    spacing: { after: 200, line: 360 },
+  })
+);
       });
     }
 
