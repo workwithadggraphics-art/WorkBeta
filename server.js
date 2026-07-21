@@ -50,14 +50,29 @@ async function extractText(buffer, filename) {
   }
 
   if (ext === "pdf") {
-    try {
-      const result = await pdfParse(buffer);
-      const text = result.text.trim();
-      if (text.length > 50) return text;
-    } catch (e) {
-      console.log("pdf-parse failed, returning empty");
-    }
-    return "[Could not extract PDF text]";
+    const base64 = buffer.toString("base64");
+    const response = await groq.chat.completions.create({
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:application/pdf;base64,${base64}`,
+              },
+            },
+            {
+              type: "text",
+              text: "Transcribe all text in this document. Ensure every word is properly spaced. Preserve paragraph breaks and structure. Return only the transcribed text.",
+            },
+          ],
+        },
+      ],
+      max_tokens: 4096,
+    });
+    return response.choices[0].message.content;
   }
 
   if (["jpg", "jpeg", "png"].includes(ext)) {
