@@ -48,9 +48,23 @@ async function extractText(buffer, filename) {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
   }
+if (ext === "pdf") {
+  const pdfParse = require("pdf-parse");
+  const { pdfToPng } = require("pdf-to-png-converter");
 
-  if (ext === "pdf") {
-    const base64 = buffer.toString("base64");
+  const data = await pdfParse(buffer);
+
+  if (data.text && data.text.trim().length > 20) {
+    // Real text layer found — use it directly
+    return data.text;
+  }
+
+  // No usable text — likely scanned/handwritten, fall back to OCR
+  const pages = await pdfToPng(buffer, { viewportScale: 2.0 });
+  let fullText = "";
+
+  for (const page of pages) {
+    const base64 = page.content.toString("base64");
     const response = await groq.chat.completions.create({
       model: "qwen/qwen3.6-27b",
       messages: [
@@ -59,9 +73,7 @@ async function extractText(buffer, filename) {
           content: [
             {
               type: "image_url",
-              image_url: {
-                url: `data:application/pdf;base64,${base64}`,
-              },
+              image_url: { url: `data:image/png;base64,${base64}` },
             },
             {
               type: "text",
@@ -72,8 +84,11 @@ async function extractText(buffer, filename) {
       ],
       max_tokens: 4096,
     });
-    return response.choices[0].message.content;
+    fullText += response.choices[0].message.content + "\n\n";
   }
+
+  return fullText.trim();
+}
 
   if (["jpg", "jpeg", "png"].includes(ext)) {
     const mimeType = ext === "png" ? "image/png" : "image/jpeg";
