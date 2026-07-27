@@ -52,17 +52,21 @@ if (ext === "pdf") {
   const pdfParse = require("pdf-parse");
   const { pdfToPng } = require("pdf-to-png-converter");
 
-  const data = await pdfParse(buffer);
-
-  if (data.text && data.text.trim().length > 20) {
-    // Real text layer found — use it directly
-    return data.text;
+  let text = "";
+  try {
+    const data = await pdfParse(buffer);
+    text = data.text || "";
+  } catch (err) {
+    console.error("pdf-parse failed, falling back to OCR:", err.message);
   }
 
-  // No usable text — likely scanned/handwritten, fall back to OCR
+  if (text.trim().length > 20) {
+    return text;
+  }
+
+  // No usable text (empty OR pdf-parse threw) — OCR fallback
   const pages = await pdfToPng(buffer, { viewportScale: 2.0 });
   let fullText = "";
-
   for (const page of pages) {
     const base64 = page.content.toString("base64");
     const response = await groq.chat.completions.create({
@@ -71,14 +75,8 @@ if (ext === "pdf") {
         {
           role: "user",
           content: [
-            {
-              type: "image_url",
-              image_url: { url: `data:image/png;base64,${base64}` },
-            },
-            {
-              type: "text",
-              text: "Transcribe all text in this document. Ensure every word is properly spaced. Preserve paragraph breaks and structure. Return only the transcribed text.",
-            },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${base64}` } },
+            { type: "text", text: "Transcribe all text in this document. Ensure every word is properly spaced. Preserve paragraph breaks and structure. Return only the transcribed text." },
           ],
         },
       ],
@@ -86,7 +84,6 @@ if (ext === "pdf") {
     });
     fullText += response.choices[0].message.content + "\n\n";
   }
-
   return fullText.trim();
 }
 
