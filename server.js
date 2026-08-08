@@ -36,6 +36,13 @@ function parseMultipart(req) {
     req.pipe(busboy);
   });
 }
+function stripThinking(rawText) {
+  if (!rawText) return rawText;
+  if (rawText.includes('<think>') && !rawText.includes('</think>')) {
+    return rawText.split('<think>')[0].trim();
+  }
+  return rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
 
 async function extractText(buffer, filename) {
   const ext = filename.split(".").pop().toLowerCase();
