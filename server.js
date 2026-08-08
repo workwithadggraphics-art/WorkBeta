@@ -89,8 +89,7 @@ if (ext === "pdf") {
       ],
       max_tokens: 4096,
     });
-    fullText += response.choices[0].message.content + "\n\n";
-  }
+    fullText += stripThinking(response.choices[0].message.content) + "\n\n";
   return fullText.trim();
 }
 
